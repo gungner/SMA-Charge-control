@@ -6,7 +6,7 @@ An advanced Node-RED automation flow designed to intelligently monitor and contr
 
 I've removed my system from SMA portal to secure no interference from them. I've also blocket all attempt from the inverter, and Home Manager 2, to call home. If you remove your system from SMA portal be aware that you will lose all your data and you'll not receive any alarms generated from the inverter, this includes alarm of residual current! Make sure you're following your local regulations. In my case I pick up these alarms with Home Assistant.
 
-I've only tested this with SMA Tripower Smart engergy 8 SE and BYD HVS batteries. Please read the MIT license prior to use this code!
+I've only tested this with SMA Tripower Smart Engergy 8 SE and BYD HVS batteries. Please read the MIT license prior to use this code!
 
 ## Features
 
@@ -24,7 +24,7 @@ I've only tested this with SMA Tripower Smart engergy 8 SE and BYD HVS batteries
 
 To run this flow effectively, your setup requires the following hardware and external sensors:
 
-- **SMA Solar Inverter:** An SMA Tripower inverter with Modbus TCP enabled (default Unit ID `3`) to read PV generation, battery status, and grid interactions.
+- **SMA Solar Inverter:** An SMA Tripower inverter with Modbus TCP enabled (default Unit ID `3`) to read PV generation, battery status, and grid interactions. You also need a SMA Home Manager 2 to manage the Auto mode.
 - **BYD Battery Storage System:** Connected to the SMA inverter for energy storage.
 - **External Energy Meter (Shelly EM3):** A 3-phase power meter installed at the main household feed, publishing real-time phase power data (`shellies/shellyem3/emeter/#`) via MQTT to track total household load.
 - **A 247 server with Node-Red installed**. I run it on a Debian LXC container operating on a Proxmox server. 
