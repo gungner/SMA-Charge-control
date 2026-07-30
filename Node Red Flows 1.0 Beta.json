@@ -1,0 +1,648 @@
+[
+    {
+        "id": "144b60ae447c8166",
+        "type": "tab",
+        "label": "SMA Control",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "492f07f10214d5c1",
+        "type": "modbus-read",
+        "z": "144b60ae447c8166",
+        "name": "SMA w,soc",
+        "topic": "",
+        "showStatusActivities": false,
+        "logIOActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "InputRegister",
+        "adr": "30843",
+        "quantity": "4",
+        "rate": "1",
+        "rateUnit": "s",
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "server": "2b8fae487a9b8b85",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 330,
+        "y": 440,
+        "wires": [
+            [
+                "1f7ea0af66527bbb"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "1f7ea0af66527bbb",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "BYD W,SoC",
+        "func": "// 1. Get discharge and multiply by 0.5 (scaling factor)\nlet discharge = ((msg.payload[0] << 16) | msg.payload[1]) * 0.5;\n\n// 2. Get charge and multiply by 0.5\nlet charge = ((msg.payload[2] << 16) | msg.payload[3]) * 0.5;\n\n// Calculate the values\nlet batteryPowerW = Math.round(charge - discharge);\nlet batterySocPct = msg.payload[3]; \n\n// 3. Save directly to global variables\nglobal.set(\"battery_power\", batteryPowerW);\nglobal.set(\"battery_soc\", batterySocPct);\n\n// 4. SET STATUS ROW UNDER NODE\n// Blue when charging (minus), yellow when discharging (plus), green when idle (0W)\nlet statusColor = \"green\";\nif (batteryPowerW < 0) {\n    statusColor = \"blue\";\n} else if (batteryPowerW > 0) {\n    statusColor = \"yellow\";\n}\n\nnode.status({\n    fill: statusColor,\n    shape: \"dot\",\n    text: `Power: ${batteryPowerW}W | SoC: ${batterySocPct}%`\n});\n\n// 5. Put the values in msg.payload for troubleshooting/debug\nmsg.payload = {\n    battery_power_w: batteryPowerW,\n    battery_soc_pct: batterySocPct\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 440,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "ecf5eb49aa981d7b",
+        "type": "mqtt in",
+        "z": "144b60ae447c8166",
+        "name": "soc",
+        "topic": "sma/soc",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "2a1077ada6f3c903",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 310,
+        "y": 680,
+        "wires": [
+            [
+                "eceb7b916e21da1b"
+            ]
+        ]
+    },
+    {
+        "id": "eceb7b916e21da1b",
+        "type": "change",
+        "z": "144b60ae447c8166",
+        "name": "save soc",
+        "rules": [
+            {
+                "t": "set",
+                "p": "sma_soc",
+                "pt": "global",
+                "to": "payload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 520,
+        "y": 680,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "1be414cf9a9c507a",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "SMA Control",
+        "func": "// ==========================================\n// 1. READ GLOBAL VARIABLES\n// ==========================================\nconst targetSoC = Number(global.get(\"sma_soc\")) || 50;\nconst currentSoC = Number(global.get(\"battery_soc\")) || 0;\nconst forceZeroExport = Number(global.get(\"zero_export\")) || 0;\nconst housePower = Number(global.get(\"house_power\")) || 0;\nconst pvPowerA = Number(global.get(\"pv_string_a\")) || 0;\nconst pvPowerB = Number(global.get(\"pv_string_b\")) || 0;\nconst pvPower = pvPowerA + pvPowerB;\nconst grid_import = Number(global.get(\"grid_import\"));\nconst charge_power = Math.min((Number(global.get(\"charge_power\")) || 5) * 1000, 9000);\n\nlet currentState = context.get(\"currentState\") || \"AUTO\";\n\n\n// ==========================================\n// 2. STATE MACHINE\n// ==========================================\nlet newState = currentState;\nconst hasSolarSurplus = pvPower > (housePower + 50);\n\nif (forceZeroExport === 1) {\n    newState = \"ZERO_EXPORT\";\n} else if (targetSoC > currentSoC) {\n    newState = \"CHARGE\";\n} else if (currentSoC > targetSoC) {\n    newState = \"AUTO\";\n} else if (currentSoC === targetSoC) {\n    if (hasSolarSurplus && currentSoC < 100) {\n        newState = \"AUTO\";\n    } else {\n        newState = \"LOCKED\";\n    }\n}\n\nif (newState !== currentState) {\n    context.set(\"currentState\", newState);\n    currentState = newState;\n    node.warn(`🔄 Switching operating mode to: ${currentState}`);\n}\n\n// ==========================================\n// 3. PARAMETERS & ICONS FOR STATE\n// ==========================================\nlet mode = 803;          \nlet powerLimit = 100;    \nlet activePower = 0;     \nlet activeReason = \"\";\n\nswitch (currentState) {\n    case \"ZERO_EXPORT\":\n        mode = 802;\n        activePower = 0; \n        let limit = Math.min(Math.round((housePower / 8000) * 100), 100);\n        powerLimit = limit < 0 ? 0 : limit;\n        activeReason = `🚫 (${powerLimit}%)`;\n        break;\n\n    case \"CHARGE\":\n        mode = 802;\n        let avail = 12400 - housePower + pvPower; // 20A*3F*230V=13800W -> 12400 with some margins\n        if (avail > charge_power) { // 9kW max charge although SMA manage 10kW\n            avail = charge_power;\n        }\n        activePower = avail * -1; // charge battery with minus \n        powerLimit = 100;    \n        activeReason = \"⚡ \";\n        break;\n\n    case \"LOCKED\":\n        mode = 802;\n        activePower = 0;     \n        powerLimit = 100;    \n        activeReason = \"🔒 \";\n        break;\n\n    case \"AUTO\":\n    default:\n        mode = 803;\n        activePower = 0;\n        powerLimit = 100;\n        activeReason = \"⚖️ \";\n        break;\n}\n\n// ==========================================\n// 4. FORMAT FOR MODBUS WRITE\n// ==========================================\nlet msgsToModbus = [];\nfunction getS32Array(value) {\n    let buf = Buffer.alloc(4);\n    buf.writeInt32BE(Math.round(value));\n    return [buf.readUInt16BE(0), buf.readUInt16BE(2)];\n}\nfunction getS16Value(value) {\n    let intVal = Math.round(value);\n    return intVal < 0 ? 65536 + intVal : intVal; \n}\n\n// Add the Modbus writes to the queue (positions 1, 2, and 3)\nmsgsToModbus.push({ payload: [0, mode], address: \"40151\", unique_id: \"sma_mode_40151\" });\nmsgsToModbus.push({ payload: [getS16Value(powerLimit)], address: \"40016\", unique_id: \"sma_limit_40016\" });\nmsgsToModbus.push({ payload: getS32Array(activePower), address: \"40149\", unique_id: \"sma_power_40149\" });\n\n// ==========================================\n// 5. STATUS UPDATE & SMART DISPATCH\n// ==========================================\nconst statusColor = { \"ZERO_EXPORT\": \"red\", \"CHARGE\": \"blue\", \"LOCKED\": \"yellow\", \"AUTO\": \"green\" }[currentState];\n\nnode.status({\n    fill: statusColor,\n    shape: \"dot\",\n    text: `[${currentState}] ${activeReason} | PV: ${pvPower}W | House: ${housePower}W | SoC: ${currentSoC}% | Target: ${targetSoC}% | Charge: ${charge_power / 1000}kW`\n});\n\n// LOGIC: \n// 1. If in AUTO: Send only on change or every 10 seconds (to save writes).\n// 2. If in any other mode: Always send (every second) to guarantee control.\n\nlet now = Date.now();\nlet lastSentTime = context.get(\"lastSentTime\") || 0;\nlet stateChanged = (currentState !== context.get(\"lastSentState\"));\nlet timeToResendAuto = (currentState === \"AUTO\" && (now - lastSentTime) > 60000);\nlet isForcedMode = (currentState !== \"AUTO\"); // CHARGE, LOCKED, ZERO_EXPORT\n\nif (stateChanged || isForcedMode || timeToResendAuto) {\n    let delayMs = 0;\n    \n    // --- ADD THE MQTT MESSAGE AT THE VERY END OF THE QUEUE ---\n    // Since we push it last, it ends up after the Modbus messages\n    // and is sent as the absolute last packet out of the node.\n    if (stateChanged) {\n        msgsToModbus.push({\n            payload: currentState,\n            address: \"MQTT_STATE\",\n            topic: \"sma/state\",\n            unique_id: \"sma_mqtt_state_update\"\n        });\n    }\n    // ---------------------------------------------------\n\n    // Loop through and send the packets one by one\n    msgsToModbus.forEach((m) => {\n        setTimeout(() => {\n            let outMsg = Object.assign({}, msg);\n            outMsg.payload = m.payload;\n            outMsg.address = m.address;\n            outMsg.unique_id = m.unique_id;\n            \n            // If there is a topic (like for the MQTT packet), include it\n            if (m.topic) {\n                outMsg.topic = m.topic; \n            }\n            \n            node.send(outMsg);\n        }, delayMs);\n        \n        // Increase the delay by 250ms for the next packet in the queue\n        delayMs += 250;\n    });\n\n    // Update timestamp and state\n    context.set(\"lastSentTime\", now);\n    context.set(\"lastSentState\", currentState);\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 100,
+        "wires": [
+            [
+                "426ce1d8f5c6ef38"
+            ]
+        ]
+    },
+    {
+        "id": "5d6f05bc72359e16",
+        "type": "mqtt in",
+        "z": "144b60ae447c8166",
+        "name": "0 Export",
+        "topic": "sma/zeroexport",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "2a1077ada6f3c903",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 320,
+        "y": 740,
+        "wires": [
+            [
+                "cfdf3cf7ed7ba3c3"
+            ]
+        ]
+    },
+    {
+        "id": "cfdf3cf7ed7ba3c3",
+        "type": "change",
+        "z": "144b60ae447c8166",
+        "name": "save export",
+        "rules": [
+            {
+                "t": "set",
+                "p": "zero_export",
+                "pt": "global",
+                "to": "payload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 530,
+        "y": 740,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "8fc993907251396e",
+        "type": "modbus-write",
+        "z": "144b60ae447c8166",
+        "name": "40151 act/ina",
+        "showStatusActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "MHoldingRegisters",
+        "adr": "40151",
+        "quantity": "2",
+        "server": "2b8fae487a9b8b85",
+        "emptyMsgOnFail": false,
+        "keepMsgProperties": false,
+        "delayOnStart": false,
+        "startDelayTime": "",
+        "x": 540,
+        "y": 260,
+        "wires": [
+            [],
+            []
+        ]
+    },
+    {
+        "id": "f9707740621d7d12",
+        "type": "modbus-write",
+        "z": "144b60ae447c8166",
+        "name": "40149 power",
+        "showStatusActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "MHoldingRegisters",
+        "adr": "40149",
+        "quantity": "2",
+        "server": "2b8fae487a9b8b85",
+        "emptyMsgOnFail": false,
+        "keepMsgProperties": false,
+        "delayOnStart": false,
+        "startDelayTime": "",
+        "x": 530,
+        "y": 320,
+        "wires": [
+            [],
+            []
+        ]
+    },
+    {
+        "id": "426ce1d8f5c6ef38",
+        "type": "switch",
+        "z": "144b60ae447c8166",
+        "name": "",
+        "property": "address",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "40016",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "40151",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "40149",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "MQTT_STATE",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 4,
+        "x": 310,
+        "y": 220,
+        "wires": [
+            [
+                "3824146d528ddc09"
+            ],
+            [
+                "8fc993907251396e"
+            ],
+            [
+                "f9707740621d7d12"
+            ],
+            [
+                "7db7507e3f22094a"
+            ]
+        ]
+    },
+    {
+        "id": "3824146d528ddc09",
+        "type": "modbus-write",
+        "z": "144b60ae447c8166",
+        "name": "40016 export",
+        "showStatusActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "MHoldingRegisters",
+        "adr": "40016",
+        "quantity": "1",
+        "server": "2b8fae487a9b8b85",
+        "emptyMsgOnFail": false,
+        "keepMsgProperties": false,
+        "delayOnStart": false,
+        "startDelayTime": "",
+        "x": 530,
+        "y": 200,
+        "wires": [
+            [],
+            []
+        ]
+    },
+    {
+        "id": "212679ff9700bb79",
+        "type": "mqtt in",
+        "z": "144b60ae447c8166",
+        "name": "EM3",
+        "topic": "shellies/shellyem3/emeter/#",
+        "qos": "0",
+        "datatype": "auto-detect",
+        "broker": "2a1077ada6f3c903",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 310,
+        "y": 800,
+        "wires": [
+            [
+                "8494b340c1e9bfd5"
+            ]
+        ]
+    },
+    {
+        "id": "8494b340c1e9bfd5",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "Save",
+        "func": "// 1. Save incoming value per phase in the node's INTERNAL memory (context)\nif (msg.topic === \"shellies/shellyem3/emeter/0/power\") {\n    context.set(\"em3_p0\", Number(msg.payload) || 0);\n} \nelse if (msg.topic === \"shellies/shellyem3/emeter/1/power\") {\n    context.set(\"em3_p1\", Number(msg.payload) || 0);\n} \nelse if (msg.topic === \"shellies/shellyem3/emeter/2/power\") {\n    context.set(\"em3_p2\", Number(msg.payload) || 0);\n}\n\n// 2. Get the last known values\nlet p0 = context.get(\"em3_p0\") || 0;\nlet p1 = context.get(\"em3_p1\") || 0;\nlet p2 = context.get(\"em3_p2\") || 0;\n\n// 3. Calculate the total\nlet totalHousePower = Math.round(p0 + p1 + p2);\n\n// ==========================================\n// 4. RATE LIMITER\n// ==========================================\nconst RATE_LIMIT_MS = 1000; // Allow an update at most every 1000 milliseconds (1 second)\n\nlet lastSave = context.get(\"lastSaveTime\") || 0;\nlet now = Date.now();\n\n// Has enough time passed since the last update?\nif (now - lastSave >= RATE_LIMIT_MS) {\n    \n    // Save the total to global memory so the State Machine can use it\n    global.set(\"house_power\", totalHousePower);\n    \n    // Update the clock\n    context.set(\"lastSaveTime\", now);\n    \n    // Clean up the number and pass it forward for debug/display\n    msg.payload = Math.round(totalHousePower);\n    \n    // Show in Node-RED's interface when it last updated\n    let timeString = new Date().toLocaleTimeString();\n    node.status({ fill: \"green\", shape: \"dot\", text: `${msg.payload} W (Last: ${timeString})` });\n    \n    return msg;\n    \n} else {\n    // Too little time has passed. We abort the flow here so the rest of the \n    // system (or your debug node) is not triggered unnecessarily.\n    return null;\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 510,
+        "y": 800,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "0f4104da1169ec1e",
+        "type": "modbus-read",
+        "z": "144b60ae447c8166",
+        "name": "30865",
+        "topic": "",
+        "showStatusActivities": false,
+        "logIOActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "InputRegister",
+        "adr": "30865",
+        "quantity": "4",
+        "rate": "1",
+        "rateUnit": "s",
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "server": "2b8fae487a9b8b85",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 310,
+        "y": 500,
+        "wires": [
+            [
+                "67e639325f01020d"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "67e639325f01020d",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "grid import",
+        "func": "/**\n * SMA NET GRID POWER COMBINER\n * Combines TotWIn (30865) and TotWOut (30867) into a single value\n */\n\nlet data = msg.payload;\n\nif (Array.isArray(data) && data.length === 4) {\n    // 1. Unpack Import (30865-30866)\n    let bufIn = Buffer.alloc(4);\n    bufIn.writeUInt16BE(data[0], 0);\n    bufIn.writeUInt16BE(data[1], 2);\n    let importPower = bufIn.readInt32BE(0);\n\n    // 2. Unpack Export (30867-30868)\n    let bufOut = Buffer.alloc(4);\n    bufOut.writeUInt16BE(data[2], 0);\n    bufOut.writeUInt16BE(data[3], 2);\n    let exportPower = bufOut.readInt32BE(0);\n\n    // 3. Logic: Create a common value\n    let netGridPower = 0;\n\n    if (importPower > 0) {\n        // Buying electricity - positive value\n        netGridPower = importPower;\n    } \n    else if (exportPower > 0) {\n        // Selling electricity - convert to negative value\n        netGridPower = exportPower * -1;\n    }\n\n    // Save the value globally\n    global.set(\"grid_import\", netGridPower);\n\n    // Pass forward for debug\n    msg.payload = netGridPower;\n    \n    // Status below the node for a quick check\n    let statusColor = netGridPower > 0 ? \"yellow\" : \"green\";\n    node.status({fill: statusColor, shape:\"dot\", text: \"Grid: \" + netGridPower + \" W\"});\n\n} else {\n    node.status({fill:\"red\", shape:\"ring\", text: \"Waiting for 4 registers...\"});\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 500,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "7e689ef23cd01c2e",
+        "type": "inject",
+        "z": "144b60ae447c8166",
+        "name": "Heartbeat 1s",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "1",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "1",
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 340,
+        "y": 100,
+        "wires": [
+            [
+                "1be414cf9a9c507a"
+            ]
+        ]
+    },
+    {
+        "id": "eb723c4ad126e926",
+        "type": "modbus-read",
+        "z": "144b60ae447c8166",
+        "name": "30773",
+        "topic": "",
+        "showStatusActivities": false,
+        "logIOActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "InputRegister",
+        "adr": "30773",
+        "quantity": "2",
+        "rate": "1",
+        "rateUnit": "s",
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "server": "2b8fae487a9b8b85",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 310,
+        "y": 560,
+        "wires": [
+            [
+                "f33dcc9310baa0d7"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f33dcc9310baa0d7",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "PV Power A",
+        "func": "if (Array.isArray(msg.payload) && msg.payload.length >= 2) {\n    let buf = Buffer.alloc(4);\n    buf.writeUInt16BE(msg.payload[0], 0);\n    buf.writeUInt16BE(msg.payload[1], 2);\n    let val = buf.readInt32BE(0);\n    \n    // Protection against night ghost values (-W)\n    global.set(\"pv_string_a\", val < 0 ? 0 : val); \n    node.status({fill:\"green\",shape:\"dot\",text:\"PV: \"+ val + \"W\"});\n}\n\nreturn msg; // We do not need to pass the data forward, it is saved globally",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 560,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "88ca5e02d0180ceb",
+        "type": "modbus-read",
+        "z": "144b60ae447c8166",
+        "name": "30961",
+        "topic": "",
+        "showStatusActivities": false,
+        "logIOActivities": false,
+        "showErrors": false,
+        "showWarnings": true,
+        "unitid": "3",
+        "dataType": "InputRegister",
+        "adr": "30961",
+        "quantity": "2",
+        "rate": "1",
+        "rateUnit": "s",
+        "delayOnStart": false,
+        "enableDeformedMessages": false,
+        "startDelayTime": "",
+        "server": "2b8fae487a9b8b85",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 310,
+        "y": 620,
+        "wires": [
+            [
+                "f0a4172bd3b29d91"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f0a4172bd3b29d91",
+        "type": "function",
+        "z": "144b60ae447c8166",
+        "name": "PV Power B",
+        "func": "if (Array.isArray(msg.payload) && msg.payload.length >= 2) {\n    let buf = Buffer.alloc(4);\n    buf.writeUInt16BE(msg.payload[0], 0);\n    buf.writeUInt16BE(msg.payload[1], 2);\n    let val = buf.readInt32BE(0);\n    \n    global.set(\"pv_string_b\", val < 0 ? 0 : val); \n    node.status({fill:\"green\",shape:\"dot\",text:\"PV: \"+ val + \"W\"});\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 530,
+        "y": 620,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "7db7507e3f22094a",
+        "type": "mqtt out",
+        "z": "144b60ae447c8166",
+        "name": "State",
+        "topic": "sma/state",
+        "qos": "0",
+        "retain": "true",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "2a1077ada6f3c903",
+        "x": 510,
+        "y": 380,
+        "wires": []
+    },
+    {
+        "id": "56ab09b468eb4a26",
+        "type": "mqtt in",
+        "z": "144b60ae447c8166",
+        "name": "Charge power",
+        "topic": "sma/chargepower",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "2a1077ada6f3c903",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 330,
+        "y": 860,
+        "wires": [
+            [
+                "d0aa1c84d8e77bd3"
+            ]
+        ]
+    },
+    {
+        "id": "d0aa1c84d8e77bd3",
+        "type": "change",
+        "z": "144b60ae447c8166",
+        "name": "save charge power",
+        "rules": [
+            {
+                "t": "set",
+                "p": "charge_power",
+                "pt": "global",
+                "to": "payload",
+                "tot": "msg"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 550,
+        "y": 860,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "2b8fae487a9b8b85",
+        "type": "modbus-client",
+        "name": "SMA tripower",
+        "clienttype": "tcp",
+        "bufferCommands": true,
+        "stateLogEnabled": true,
+        "queueLogEnabled": false,
+        "failureLogEnabled": true,
+        "tcpHost": "192.168.1.10",
+        "tcpPort": 502,
+        "tcpType": "DEFAULT",
+        "serialPort": "/dev/ttyUSB",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": 9600,
+        "serialDatabits": 8,
+        "serialStopbits": 1,
+        "serialParity": "none",
+        "serialConnectionDelay": 100,
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": 3,
+        "commandDelay": 100,
+        "clientTimeout": "2000",
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": 5000,
+        "parallelUnitIdsAllowed": false,
+        "showErrors": true,
+        "showWarnings": true,
+        "showLogs": true
+    },
+    {
+        "id": "2a1077ada6f3c903",
+        "type": "mqtt-broker",
+        "name": "MQTT",
+        "broker": "192.168.1.7",
+        "port": 1883,
+        "clientid": "nodered",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "207db932c9d97b22",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-modbus": "5.45.2"
+        }
+    }
+]
