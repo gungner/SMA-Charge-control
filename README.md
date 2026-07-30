@@ -6,7 +6,7 @@ An advanced Node-RED automation flow designed to intelligently monitor and contr
 
 I've removed my system from SMA portal to secure no interference from them. I've also blocket all attempt from the inverter, and Home Manager 2, to call home. If you remove your system from SMA portal be aware that you will lose all your data and you'll not receive any alarms generated from the inverter, this includes alarm of residual current! Make sure you're following your local regulations. In my case I pick up these alarms with Home Assistant.
 
-I've only tested this with SMA Tripower Smart engergy 8 SE and BYD HVS batteries. According the MIT license, I take no responsibility that this code will work or damage your inverter and/or battery.
+I've only tested this with SMA Tripower Smart engergy 8 SE and BYD HVS batteries. Please read the MIT license prior to use this code!
 
 ## Features
 
