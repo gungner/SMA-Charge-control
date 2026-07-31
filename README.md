@@ -34,11 +34,11 @@ To run this flow effectively, your setup requires the following hardware and ext
 You can control and configure the system remotely by publishing messages to the following MQTT topics:
 
 - `sma/soc`
-  - *Function:* Sets the target State of Charge (SoC) percentage for the battery (default: `50`).
+  - *Function:* Sets the target State of Charge (SoC) percentage for the battery (default: `50`). If target SoC is > current Soc, charging will start with chargecurrent power. If target Soc < current SoC, the inverter will use batteri as energy and go into AUTO state. If target SoC === current Soc, the system goes into LOCKED state and only use grid power.
 - `sma/zeroexport`
-  - *Function:* Toggles zero-export behavior. Send `1` to enable zero-export mode or `0` to disable it.
+  - *Function:* Toggles zero-export behavior. Send `1` to enable zero-export mode or `0` to disable it. If enabled the export of energy and charging of batteri will end and only grid power will be used. This is how the inverter is programmed. I only use this when the price is negativ and my batteries are at 100% SoC.
 - `sma/chargepower`
-  - *Function:* Sets the maximum allowed battery charge power limit in kW.
+  - *Function:* Sets the maximum allowed battery charge power limit in kW. Although the inverter can handle 10kW charge power, I've limited it to maximum 9kW not the stress the electronics too much.
 - `sma/state` *(Read/Broadcast)*
   - *Function:* Broadcasts the current active operational state (`AUTO`, `CHARGE`, `ZERO_EXPORT`, `LOCKED`).
 
@@ -57,7 +57,7 @@ You can control and configure the system remotely by publishing messages to the 
 
 
 
-**1.0 Beta**
+**1.0 Beta1**
 
 This release has been running now for some months without any issues.
 
