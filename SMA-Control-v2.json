@@ -615,16 +615,6 @@
         "wires": []
     },
     {
-        "id": "f6809d78a69c6c67",
-        "type": "comment",
-        "z": "12c888004ff80592",
-        "name": "SMA Control v2 - active control",
-        "info": "Active control (replaces \"SMA Control\", which remains inactive). To revert: disable this tab, enable \"SMA Control\" and do a FULL deploy. Never have both active at the same time.\n\nChanges compared to production:\n- housePower = inverter AC power (30775) + net grid power\n- actual battery power (31393/31395) instead of current*0.5 - SoC*0.5\n- all inputs are time-stamped; stale/missing input -> FAILSAFE (803, 100 %, 0 W)\n- peak shaving always on: phase current (31435, 20 A fuse) and power (sma/peak, default 13 kW)\n- SoC hysteresis for CHARGE (constant SOC_HYST, now 0 = charge as soon as SoC < target), minimum time 20 s in a mode\n- AC cap: charging max 8000 W + PV, discharging max 8000 W - PV\n- writes only on change. Forced modes: 40149 every 2 s, 40151/40016 every 10 s. AUTO: every 60 s\n- read intervals: PV A+AC (30773), grid (30865), PV B (30961), phase current (31435), battery W (31393) every 1 s; SoC+voltage (30845 x8) every 5 s\n- sma/discharge (manual discharge) only applies while SoC > sma/soc. At SoC <= target it is ignored (warning in plan debug).\n- power peak (sma/peak) does not start below 5 % SoC (resumes at 7 %). Phase peak (the fuse) has no SoC floor.\n- power peak: integrating control, setpoint = previous setpoint + 0.15 * (measured grid import - peak), max 800 W above measured discharge (anti-windup), write threshold 100 W. Replaces feed-forward, which oscillated because of the grid meter's delay.\n\nGLOBALS\n- Measurements: global \"sma\" = { key: {v, ts} }, written by the decoders: batSoc, batVol (30845), grid (30865), pvA + invAc (30773), pvB (30961), batChg/batDsch/batNet (31393), phaseMax/phaseA (31435). Older than 10 s -> FAILSAFE (mandatory: batSoc, grid, pvA, pvB, invAc).\n- MQTT settings (unchanged): sma_soc (target SoC), zero_export, discharge, charge_power, peak.\n- charging from grid/solar is limited by the phase current (20 A fuse, trigger 19 A): integrating charge limit, fast reduction (0.3) and slow increase (0.1). Phase peak (discharge) only starts if the load alone (without battery charging) is above 19 A.\n- AUTO/LOCKED at SoC = target: LOCKED -> AUTO only after 10 s of continuous solar surplus, AUTO -> LOCKED only after 60 s without solar surplus (AUTO_ENTER_MS / AUTO_HOLD_MS). Reduces mode changes on cloudy days.",
-        "x": 270,
-        "y": 80,
-        "wires": []
-    },
-    {
         "id": "f3752648f6e2e5e6",
         "type": "modbus-read",
         "z": "12c888004ff80592",
