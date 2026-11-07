@@ -100,7 +100,7 @@ You control the system by publishing messages to these MQTT topics. The flow rem
 
 The `Plan v2` debug node shows what the flow has decided and why, which is useful when you set it up.
 
-`Node Red Flows 1.0 Beta.json` is kept for reference only. Never run version 1 and version 2 at the same time, since both would control the inverter.
+`legacy/Node Red Flows 1.0 Beta.json` is kept for reference only. Never run version 1 and version 2 at the same time, since both would control the inverter.
 
 ## Versions
 
@@ -110,7 +110,7 @@ The `Plan v2` debug node shows what the flow has decided and why, which is usefu
 - See [CHANGELOG.md](CHANGELOG.md) for all details.
 - To go back to the old flow: disable the v2 tab, enable the old one and do a **full** deploy.
 
-**1.0 Beta1** (`Node Red Flows 1.0 Beta.json`)
+**1.0 Beta1** (`legacy/Node Red Flows 1.0 Beta.json`)
 
 This release ran for some months without any issues.
 
