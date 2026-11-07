@@ -39,6 +39,12 @@ You can control and configure the system remotely by publishing messages to the 
   - *Function:* Toggles zero-export behavior. Send `1` to enable zero-export mode or `0` to disable it. If enabled the export of energy and charging of batteri will end and only grid power will be used. This is how the inverter is programmed. I only use this when the price is negativ and my batteries are at 100% SoC.
 - `sma/chargepower`
   - *Function:* Sets the maximum allowed battery charge power limit in kW. Although the inverter can handle 10kW charge power, I've limited it to maximum 9kW not the stress the electronics too much.
+- `sma/discharge` *(v2)*
+  - *Function:* Manual discharge power in W (minimum 2500 W, maximum 8000 W). Only applies while SoC is above the `sma/soc` target; otherwise it is ignored.
+- `sma/peak` *(v2)*
+  - *Function:* Power peak limit for grid import in W. `0` or unset uses the default reserve of 13 kW. The battery covers all load above the limit. Does not start below 5 % SoC.
+- `sma/fas/l1`, `sma/fas/l2`, `sma/fas/l3` *(v2, Broadcast)*
+  - *Function:* Phase currents in A, published every second.
 - `sma/state` *(Read/Broadcast)*
   - *Function:* Broadcasts the current active operational state (`AUTO`, `CHARGE`, `ZERO_EXPORT`, `LOCKED`).
 
@@ -52,18 +58,26 @@ You can control and configure the system remotely by publishing messages to the 
 
 1. **Modbus Client:** Update the `SMA tripower` Modbus configuration node with your inverter's local IP address and port (`502`).
 2. **MQTT Broker:** Update the `MQTT` broker configuration node with your local broker's IP address and port (`1883`).
-3. **Import:** Copy the raw JSON flow data and import it directly into your Node-RED workspace via **Import -&gt; Clipboard**.
+3. **Import:** Import `SMA-Control-v2.json` into your Node-RED workspace via **Import -&gt; Clipboard** (or **Select a file to import**). `Node Red Flows 1.0 Beta.json` is kept for reference only. Never run v1 and v2 at the same time.
 4. Change the IP addresses to match your inverter and MQTT broker.
 
 
 
-**1.0 Beta1**
+## Versions
 
-This release has been running now for some months without any issues.
+**2.0.0** (current, `SMA-Control-v2.json`)
+
+- Peak shaving (phase current and power), manual discharge, fail-safe on stale data, phase currents on MQTT.
+- See [CHANGELOG.md](CHANGELOG.md) for details.
+- To go back to the old flow: disable the v2 tab, enable the old one and do a **full** deploy. Never have both active.
+
+**1.0 Beta1** (`Node Red Flows 1.0 Beta.json`)
+
+This release ran for some months without any issues.
 
 **Roadmap**
 
-- Peak Shaving, be able to to set a maximum power limit from the grid, all additional power shall be provided by the battery. 
+- ~~Peak shaving~~ (done in 2.0.0).
 
 <img width="722" height="849" alt="image" src="https://github.com/user-attachments/assets/8ff7a6b0-1d16-4bc6-90dd-388925883fdc" />
 
